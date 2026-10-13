@@ -14,8 +14,8 @@ st.markdown(
     " wiederkehrende Haushaltsaufgaben."
 )
 
-# Initialisierung des Session-Speichers (Beispieldaten beim ersten Start)
-if "items" not in st.session_state:
+# Initialisierung des Session-Speichers mit Absicherung
+if "items" not in st.session_state or not isinstance(st.session_state.items, list):
   st.session_state.items = [
       {
           "name": "Sonnencreme SPF 50",
@@ -48,7 +48,6 @@ with st.sidebar.form("add_form"):
       ["Nach Öffnen (Monate)", "Wiederkehrend (Monate)", "Ablaufdatum fix"],
   )
 
-  # Datumsauswahl je nach Typ
   if typ == "Ablaufdatum fix":
     start_date = st.date_input(
         "Ablaufdatum", value=datetime.date.today() + datetime.timedelta(days=30)
@@ -85,62 +84,72 @@ with col1:
   ).lower()
 
 with col2:
-  # Sicherstellen, dass Kategorien sicher ermittelt werden
-  categories = ["Alle"] + sorted(
-      list(set([item.get("category", "Sonstige") for item in st.session_state.items]))
-  )
+  # Kategorien sicher ermitteln
+  safe_items = st.session_state.get("items", [])
+  categories_set = set()
+  if isinstance(safe_items, list):
+    for item in safe_items:
+      if isinstance(item, dict):
+        categories_set.add(item.get("category", "Sonstige"))
+  categories = ["Alle"] + sorted(list(categories_set))
   selected_cat = st.selectbox("Kategorie filtern", categories)
 
 # Berechnungen für die Tabelle durchführen
 processed_data = []
 today = datetime.date.today()
 
-for idx, item in enumerate(st.session_state.items):
-  # Berechne Zieldatum
-  if item["typ"] == "Ablaufdatum fix":
-    target_date = item["start_date"]
-  else:
-    target_date = item["start_date"] + datetime.timedelta(
-        days=int(item["duration"] * 30.5)
-    )
+safe_items = st.session_state.get("items", [])
+if isinstance(safe_items, list):
+  for idx, item in enumerate(safe_items):
+    if not isinstance(item, dict):
+      continue
+    
+    item_type = item.get("typ", "Ablaufdatum fix")
+    item_start = item.get("start_date", today)
+    item_dur = item.get("duration", 0)
+    
+    if item_type == "Ablaufdatum fix":
+      target_date = item_start
+    else:
+      target_date = item_start + datetime.timedelta(
+          days=int(item_dur * 30.5)
+      )
 
-  # Resttage berechnen
-  delta_days = (target_date - today).days
+    delta_days = (target_date - today).days
 
-  # Status bestimmen
-  if delta_days < 0:
-    status = "🔴 Abgelaufen"
-  elif delta_days <= 30:
-    status = "🟡 Bald fällig"
-  else:
-    status = "🟢 Gültig"
+    if delta_days < 0:
+      status = "🔴 Abgelaufen"
+    elif delta_days <= 30:
+      status = "🟡 Bald fällig"
+    else:
+      status = "🟢 Gültig"
 
-  # Filter anwenden
-  if search_query and search_query not in item["name"].lower() and search_query not in item["note"].lower():
-    continue
-  if selected_cat != "Alle" and item["category"] != selected_cat:
-    continue
+    item_name = item.get("name", "")
+    item_note = item.get("note", "")
+    item_cat = item.get("category", "Sonstige")
 
-  processed_data.append({
-      "id": idx,
-      "Name": item["name"],
-      "Kategorie": item["category"],
-      "Typ": item["typ"],
-      "Datum (Start/Fix)": item["start_date"],
-      "Fällig / Ablauf": target_date,
-      "Verbleibende Tage": delta_days,
-      "Status": status,
-      "Notiz": item["note"],
-  })
+    if search_query and search_query not in item_name.lower() and search_query not in item_note.lower():
+      continue
+    if selected_cat != "Alle" and item_cat != selected_cat:
+      continue
 
-# Als DataFrame anzeigen
+    processed_data.append({
+        "id": idx,
+        "Name": item_name,
+        "Kategorie": item_cat,
+        "Typ": item_type,
+        "Datum (Start/Fix)": item_start,
+        "Fällig / Ablauf": target_date,
+        "Verbleibende Tage": delta_days,
+        "Status": status,
+        "Notiz": item_note,
+    })
+
 if processed_data:
   df = pd.DataFrame(processed_data)
-
   display_df = df.drop(columns=["id"])
   st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-  # Lösch-Funktion
   st.markdown("---")
   st.subheader("🗑️ Einträge verwalten")
   item_to_delete = st.selectbox(
@@ -152,6 +161,5 @@ if processed_data:
     st.session_state.items.pop(item_to_delete)
     st.success("Eintrag gelöscht!")
     st.rerun()
-
 else:
   st.info("Keine Einträge gefunden, die den Filtern entsprechen.")
