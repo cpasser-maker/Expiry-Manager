@@ -83,12 +83,13 @@ with col1:
   search_query = st.text_input(
       "🔍 Schnellsuche (Name oder Notiz)", ""
   ).lower()
+
 with col2:
-  selected_cat = st.selectbox(
-      "Kategorie filtern",
-      ["Alle"]
-      + list(set([item["category"] for item in st.session_state.items])),
+  # Sicherstellen, dass Kategorien sicher ermittelt werden
+  categories = ["Alle"] + sorted(
+      list(set([item.get("category", "Sonstige") for item in st.session_state.items]))
   )
+  selected_cat = st.selectbox("Kategorie filtern", categories)
 
 # Berechnungen für die Tabelle durchführen
 processed_data = []
@@ -99,7 +100,6 @@ for idx, item in enumerate(st.session_state.items):
   if item["typ"] == "Ablaufdatum fix":
     target_date = item["start_date"]
   else:
-    # Grobe Monatsberechnung (30.5 Tage pro Monat)
     target_date = item["start_date"] + datetime.timedelta(
         days=int(item["duration"] * 30.5)
     )
@@ -137,7 +137,6 @@ for idx, item in enumerate(st.session_state.items):
 if processed_data:
   df = pd.DataFrame(processed_data)
 
-  # Tabelle ohne ID anzeigen, aber mit schöner Formatierung
   display_df = df.drop(columns=["id"])
   st.dataframe(display_df, use_container_width=True, hide_index=True)
 
